@@ -1,8 +1,8 @@
 package Test::Wrapper;
 BEGIN {
-  $Test::Wrapper::VERSION = '0.2.1';
+  $Test::Wrapper::AUTHORITY = 'cpan:YANICK';
 }
-
+$Test::Wrapper::VERSION = '0.3.0';
 # ABSTRACT: Use Test::* tests outside of a TAP context
 
 
@@ -22,15 +22,15 @@ sub test_wrap {
     my @tests = ref $test ? @$test : ($test);
 
     my $package = __PACKAGE__;
-    my $level++;
+    my $level = 1;
 
     ($package) = caller $level++ while $package eq __PACKAGE__;
 
-    for (@tests) {
+    for my $t (@tests) {
 
-        my $to_wrap = join '::', $package, $args{prefix} . $_;
+        my $to_wrap = join '::', $package, $args{prefix} . $t;
 
-        my $original = join '::', $package, $_;
+        my $original = join '::', $package, $t;
         my $original_ref = eval '\&' . $original;
 
         my $proto = prototype $original_ref;
@@ -38,35 +38,10 @@ sub test_wrap {
 
         no warnings qw/ redefine /;
 
-        eval <<"END";
-
-    sub $to_wrap $proto {
-        local \$Test::Builder::Test = undef;
-
-        my \$builder = Test::Builder->new;
-
-        \$builder->{Have_Plan}        = 1;
-        \$builder->{Have_Output_Plan} = 1;
-        \$builder->{Expected_Tests}   = 1;
-
-        if ( Test::More->VERSION >= 2 ) {
-            \$builder->{History} = Test::Builder2::History->create;
-        }
-
-        my ( \$output, \$failure, \$todo );
-        \$builder->output( \\\$output );
-        \$builder->failure_output( \\\$failure);
-        \$builder->todo_output( \\\$todo );
-
-        \$original_ref->( \@_ );
-
-        return Test::Wrapper->new(
-            output => \$output,
-            diag => \$failure,
-            todo => \$todo,
-        );
-
-        }
+        eval sprintf <<'END', $to_wrap, $proto;
+            sub %s %s {
+                Test::Wrapper->run_test( $t, $original_ref, @_ );
+            }
 END
 
         die $@ if $@;
@@ -80,11 +55,58 @@ sub is_success {
     return $_[0]->output =~ /^ok/;
 }
 
+has "_test_args" => (
+    traits => [ 'Array' ],
+    isa => 'ArrayRef',
+    is => 'ro',
+    default => sub { [] },
+    handles => {
+        test_args => 'elements',
+    },
+);
+
+has "test_name" => (
+    isa => 'Str',
+    is => 'ro',
+);
+
+
 sub BUILD {
     my $self = shift;
 
     # we don't need the commenting
     $self->{diag} =~ s/^\s*#//mg;
+}
+
+sub run_test {
+    my( undef, $name, $original_ref, @args ) = @_;
+    $name =~ s/^:://;
+
+    local $Test::Builder::Test = undef;
+
+    my $builder = Test::Builder->new;
+
+    $builder->{Have_Plan}        = 1;
+    $builder->{Have_Output_Plan} = 1;
+    $builder->{Expected_Tests}   = 1;
+
+    $builder->{History} = Test::Builder2::History->create
+        if Test::More->VERSION >= 2;
+
+    $builder->output( \my $output );
+    $builder->failure_output( \my $failure);
+    $builder->todo_output( \my $todo );
+
+    $original_ref->( @args );
+
+    return Test::Wrapper->new(
+        test_name => $name,
+        _test_args => \@args,
+        output    => $output,
+        diag      => $failure,
+        todo      => $todo,
+    );
+
 }
 
 
@@ -96,9 +118,11 @@ __PACKAGE__->meta->make_immutable;
 
 1;
 
-
 __END__
+
 =pod
+
+=encoding UTF-8
 
 =head1 NAME
 
@@ -106,7 +130,7 @@ Test::Wrapper - Use Test::* tests outside of a TAP context
 
 =head1 VERSION
 
-version 0.2.1
+version 0.3.0
 
 =head1 SYNOPSIS
 
@@ -217,6 +241,14 @@ TODO message of the test.
 
 TAP result of the test '(I<ok 1 - yadah>'). 
 
+=head2 test_name
+
+Name of the wrapped test.
+
+=head2 test_args
+
+The list of arguments passed to the test.
+
 =head1 OVERLOADING
 
 =head2 Boolean context
@@ -256,4 +288,3 @@ This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
 
 =cut
-

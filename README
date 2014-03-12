@@ -2,7 +2,7 @@ NAME
     Test::Wrapper - Use Test::* tests outside of a TAP context
 
 VERSION
-    version 0.2.1
+    version 0.3.0
 
 SYNOPSIS
         use Test::Wrapper;
@@ -99,6 +99,12 @@ Attributes
 
   output
     TAP result of the test '(*ok 1 - yadah*').
+
+  test_name
+    Name of the wrapped test.
+
+  test_args
+    The list of arguments passed to the test.
 
 OVERLOADING
   Boolean context
